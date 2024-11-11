@@ -5,8 +5,11 @@ from pyspark.sql.types import StringType, StructType, StructField, LongType, Arr
 from user_agents import parse
 from util.config import Config
 from util.logger import Log4j
-
+from db import Postgres
 from dim_table import create_dim_date,create_dim_product,create_dim_territory
+
+db = Postgres()
+db.create_table()
 
 # create sparkSession
 conf = Config()
@@ -90,7 +93,7 @@ def process_batch(batch_df):
     tmp_df = tmp_df\
     .withColumn("tmp_territory_id",dim_territory_id)
     behaviour_df = tmp_df.join(dim_territory,tmp_df["tmp_territory_id"]==dim_territory["territory_id"],'left')
-    # territory_id
+    # territory_id_handle_null
     gen_territory_id = when(col('territory_id').isNull(),-1).otherwise(col('territory_id'))
 
     # geneate date_id
@@ -101,22 +104,68 @@ def process_batch(batch_df):
 
     # generate os_id
     parse_os_udf = udf(lambda ua:parse(ua).os.family, returnType=StringType())
-    gen_browser_id = abs(hash(col('os')))
+    gen_os_id = abs(hash(col('os')))
 
+    # handle null product_id
+    handle_null_product_id = when(col('product_id').isNull(),-1).otherwise(col('product_id'))
+    # handle null referrer_url
+    handle_referrer_url = when(col('referrer_url').isNull(),"Undefine").otherwise(col('referrer_url'))
+    # handle null current_url
+    handle_current_url = when(col('current_url').isNull(),"Undefine").otherwise(col('current_url'))
 
-    behaviour_df\
-    .withColumn('territory_id',gen_territory_id)\
-    .withColumn('date_id',gen_date_id)\
-    .withColumn('browser',parse_browser_udf)\
-    .withColumn('browser_id',gen_browser_id)\
-    .withColumn('os',parse_os_udf)\
-    .withColumn('')
-    .select('territory_id','date_id')\
-    .show(truncate=False)
+    behaviour_df_genkey = behaviour_df\
+                        .withColumn('territory_id',gen_territory_id)\
+                        .withColumn('date_id',gen_date_id)\
+                        .withColumn('browser',parse_browser_udf('user_agent'))\
+                        .withColumn('browser_id',gen_browser_id)\
+                        .withColumn('os',parse_os_udf('user_agent'))\
+                        .withColumn('os_id',gen_os_id)\
+                        .withColumn('product_id',handle_null_product_id)\
+                        .withColumn('referrer_url',handle_referrer_url)\
+                        .withColumn('currrent_url',handle_current_url)
+                        
+    
+    gen_fact_key =  md5(
+                        concat(
+                        col("date_id"),
+                        col("territory_id"),
+                        col("product_id"),
+                        col("browser_id"),
+                        col("os_id"),
+                        col("referrer_url"),
+                        col("current_url")))                
+    fact_view = behaviour_df_genkey \
+                .groupBy(col("product_id"),
+                        col("territory_id"),
+                        col("date_id"),
+                        col("os_id"),
+                        col("browser_id"),
+                        col("current_url"),
+                        col("referee_url"),
+                        col("store_id"))\
+                .agg(
+                    count("*").alias("total_view")
+                )\
+                .withColumn("id",gen_fact_key)
+    fact_view = fact_view.select(["id"] + [col_name for col_name in fact_view.columns if col_name != "id"])
+    # fact_view.show()
 
+    # dim browser
+    df_dim_browser = behaviour_df_genkey\
+                    .select("browser_id",
+                            col("browser").alias("browser_name"))\
+                    .distinct()
+    
+    # dim os
+    df_dim_os = behaviour_df_genkey\
+                .select("os_id",
+                        col("os").alias("os_name"))\
+                .distinct()
+    df_dim_browser.show()
+    df_dim_os.show()
+    
 
-if __name__ == '__main__':
-
+def streaming_process():
     df = spark.readStream \
         .format("kafka") \
         .options(**kafka_conf) \
@@ -131,5 +180,11 @@ if __name__ == '__main__':
         .trigger(processingTime="4 seconds") \
         .start() \
         
-
+    print("process ending")
     query.awaitTermination()
+
+
+if __name__ =="__main__":
+    print("start process")
+    streaming_process()
+

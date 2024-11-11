@@ -55,7 +55,7 @@ def create_dim_territory(spark):
                 col('territory_id'),
                 col('alpha-2').alias('country_code'),
                 col('name').alias('country_name'),
-                col('iso_3166-2'),
+                col('iso_3166-2').alias('iso_3166_2'),
                 col('region'),
                 col('sub-region').alias('sub_region'),
                 col('intermediate-region').alias('intermediate_region')
@@ -75,6 +75,6 @@ def create_dim_date(spark):
         .withColumn("month", month(col("full_date"))) \
         .withColumn("year", year(col("full_date"))) \
         .withColumn("hour", hour(col("full_date")))
-    date_df = date_df.select("date_id", "full_date", "day_of_week", "day_of_week_short", "day_of_month", "month", "year", "hour")
+    date_df = date_df.select("date_id", "full_date", "day_of_week", "day_of_week_short", "day_of_month", "year", "month", "hour")
     return date_df
 # spark.stop()
