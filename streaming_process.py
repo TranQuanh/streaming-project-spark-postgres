@@ -5,11 +5,11 @@ from pyspark.sql.types import StringType, StructType, StructField, LongType, Arr
 from user_agents import parse
 from util.config import Config
 from util.logger import Log4j
-from db import Postgres
+from postgres_database import Postgres
 from dim_table import create_dim_date,create_dim_product,create_dim_territory
 
-db = Postgres()
-db.create_table()
+db_ops = Postgres()
+db_ops.create_table()
 
 # create sparkSession
 conf = Config()
@@ -141,7 +141,7 @@ def process_batch(batch_df):
                         col("os_id"),
                         col("browser_id"),
                         col("current_url"),
-                        col("referee_url"),
+                        col("referrer_url"),
                         col("store_id"))\
                 .agg(
                     count("*").alias("total_view")
@@ -162,7 +162,9 @@ def process_batch(batch_df):
                         col("os").alias("os_name"))\
                 .distinct()
     df_dim_browser.show()
-    df_dim_os.show()
+    # df_dim_os.show()
+    df_dim_browser.show()
+    # db_ops.upsert_to_dim_browser(df_dim_browser)
     
 
 def streaming_process():
@@ -180,8 +182,8 @@ def streaming_process():
         .trigger(processingTime="4 seconds") \
         .start() \
         
-    print("process ending")
     query.awaitTermination()
+    print("process ending")
 
 
 if __name__ =="__main__":

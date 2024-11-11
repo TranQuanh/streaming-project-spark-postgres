@@ -10,19 +10,24 @@ class Postgres:
             password="UnigapPostgres@123"
         )
         return conn
-    def upsert_to_table(insert_query,partition,columns):
+    def upsert_to_table(self, partition, insert_query, columns):
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            for row in partition:
-                values = list(row)
-                print(values)
-                cursor.execute(insert_query,values)
+            conn = self.get_connection()       
+            cursor = conn.cursor()             
+            for row in partition:             
+                try:    
+                    values = [getattr(row, col) for col in columns]
+                    cursor.execute(insert_query, values)
+                except Exception as e:
+                    print(f"Error inserting row {row}: {e}")
+            conn.commit()                      # Lưu các thay đổi
         except Exception as e:
-            print(f"Error inserting row {row} : {e}")
+            print(f"Error in partition: {e}")
         finally:
-            cursor.close()
-            conn.close()
+            # Đóng cursor và connection khi hoàn thành
+            if 'conn' in locals() and conn:
+                cursor.close()
+                conn.close()
 
     def upsert_to_dim_browser(self,df_browser):
         columns = ['browser_id','browser_name']
