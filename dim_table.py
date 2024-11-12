@@ -3,7 +3,7 @@ import json
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as f
 from pyspark.sql.functions import col,hash,abs,lower
-from pyspark.sql.types import StructType, StructField, StringType,IntegerType
+from pyspark.sql.types import StructType, StructField, StringType,IntegerType,LongType
 from pyspark.sql.functions import col, date_format, hour, dayofmonth, month, year, lit
 from util.config import Config
 from util.logger import Log4j
@@ -21,7 +21,7 @@ from util.logger import Log4j
 def create_dim_product(spark):
     # Định nghĩa schema cho product_name
     schema = StructType([
-        StructField("id", StringType(), False),
+        StructField("product_id", IntegerType(), False),
         StructField("product_name", StringType(), False)
     ])
     # Đọc dữ liệu từ file JSON
@@ -29,9 +29,10 @@ def create_dim_product(spark):
         data = json.load(file)
 
     # Chuyển đổi dữ liệu thành danh sách các tuple (key, value)
-    data_list = [(k, v) for k, v in data.items()]
+    data_list = [(int(k), v) for k, v in data.items()]
     # Chuyển đổi dictionary thành danh sách tuple
     country_df = spark.createDataFrame(data_list, schema=schema)
+    return country_df
 # country_df.show()
 def create_dim_territory(spark):
     # Thiết kế StructType
@@ -68,7 +69,7 @@ def create_dim_date(spark):
     """).selectExpr("explode(full_date) as full_date")
 
     # Thêm các cột cần thiết
-    date_df = date_df.withColumn("date_id", date_format(col("full_date"), "HHddMMyyyy").cast(IntegerType())) \
+    date_df = date_df.withColumn("date_id", date_format(col("full_date"), "HHddMMyyyy").cast(LongType())) \
         .withColumn("day_of_week", date_format(col("full_date"), "EEEE")) \
         .withColumn("day_of_week_short", date_format(col("full_date"), "E")) \
         .withColumn("day_of_month", dayofmonth(col("full_date"))) \

@@ -1,5 +1,7 @@
 import psycopg2
-
+from util.config import Config
+from util.logger import Log4j
+from pyspark.sql import SparkSession
 DB_CONFIG = {
     'host': 'postgres',
     'port': 5432,
@@ -34,7 +36,14 @@ def process_partition(columns,insert_query,partition):
         if conn:
             cursor.close()
             conn.close()
-
+def test():
+    conn = get_connection()       
+    cursor = conn.cursor()  
+    insert_query = '''INSERT INTO dim_browser (browser_id, browser_name) 
+                    VALUES (2, 'Cssh') ON CONFLICT (browser_id) DO NOTHING'''
+    cursor.execute(insert_query)
+    cursor.close()
+    conn.close()
 def upsert_to_dim_browser(df_browser):
     columns = ['browser_id','browser_name']
     column_names = ",".join(columns)
@@ -43,61 +52,13 @@ def upsert_to_dim_browser(df_browser):
 
     df_browser.foreachPartition(lambda partition:process_partition(columns,insert_query,partition))
 
-def upsert_to_dim_os(df_os):
-    columns = ['os_id','os_name']
-    column_names = ",".join(columns)
-    placeholders = ','.join(['%s']*len(columns))
-    insert_query = f"INSERT INTO dim_os ({column_names}) VALUES ({placeholders}) ON CONFLICT (os_id) DO NOTHING"
-    
-    df_os.foreachPartition(lambda partition:process_partition(columns,insert_query,partition))
-def upsert_to_fact_vew(df_fact):
-    columns = ['id','product_id','territory_id','date_id','os_id','browser_id','current_url','referrer_url','store_id','total_view']
-    column_names = ",".join(columns)
-    placeholders = ','.join(['%s']*len(columns))
-    insert_query = f"""
-                    INSERT INTO fact_view ({column_names})
-                    VALUES ({placeholders})
-                    ON CONFLICT (id)
-                    DO UPDATE SET total_view = fact_view.total_view + EXCLUDED.total_view;
-                    """
-    df_fact.foreachPartition(lambda partition:process_partition(columns,insert_query,partition))
-def insert_to_dim_date(df_date):
-    df_date.write \
-        .format("jdbc") \
-        .option("driver", "org.postgresql.Driver") \
-        .option("url", "jdbc:postgresql://postgres:5432/postgres") \
-        .option("dbtable", "dim_date") \
-        .option("user", "postgres") \
-        .option("password", "UnigapPostgres@123") \
-        .mode("append") \
-        .save()
-def insert_to_dim_territory(df_territory):
-    df_territory.write \
-        .format("jdbc") \
-        .option("driver", "org.postgresql.Driver") \
-        .option("url", "jdbc:postgresql://postgres:5432/postgres") \
-        .option("dbtable", "dim_territory") \
-        .option("user", "postgres") \
-        .option("password", "UnigapPostgres@123") \
-        .mode("append") \
-        .save()
-def insert_to_dim_product(df_product):
-    df_product.write \
-        .format("jdbc") \
-        .option("driver", "org.postgresql.Driver") \
-        .option("url", "jdbc:postgresql://postgres:5432/postgres") \
-        .option("dbtable", "dim_product") \
-        .option("user", "postgres") \
-        .option("password", "UnigapPostgres@123") \
-        .mode("append") \
-        .save()
 def create_table():
     conn = get_connection()
     cur = conn.cursor()  
     query = '''
-    DROP TABLE IF EXISTS dim_date CASCADE;
-    CREATE TABLE dim_date(
-        date_id BIGINT PRIMARY KEY,
+    DROP TABLE IF EXISTS Dim_Date CASCADE;
+    CREATE TABLE Dim_Date(
+        date_id INT PRIMARY KEY,
         full_date DATE,
         day_of_week VARCHAR(10),
         day_of_week_short VARCHAR(10),
@@ -107,16 +68,16 @@ def create_table():
         hour INT
     );
 
-    DROP TABLE IF EXISTS dim_product CASCADE;
-    CREATE TABLE dim_product(
+    DROP TABLE IF EXISTS Dim_Product CASCADE;
+    CREATE TABLE Dim_Product(
         product_id INT PRIMARY KEY,
-        product_name VARCHAR(100)
+        product_name VARCHAR(50)
     );
 
-    DROP TABLE IF EXISTS dim_territory CASCADE;
-    CREATE TABLE dim_territory(
+    DROP TABLE IF EXISTS Dim_Territory CASCADE;
+    CREATE TABLE Dim_Territory(
         territory_id INT PRIMARY KEY,
-        country_code VARCHAR(10),
+        country_code INT,
         Country_name VARCHAR(100),         
         iso_3166_2 VARCHAR(30),          
         region VARCHAR(100),              
@@ -124,27 +85,27 @@ def create_table():
         intermediate_region VARCHAR(100)   
     );
 
-    DROP TABLE IF EXISTS dim_os CASCADE;          
-    CREATE TABLE dim_os(
+    DROP TABLE IF EXISTS Dim_Os CASCADE;          
+    CREATE TABLE Dim_Os(
         os_id INT PRIMARY KEY,
         os_name VARCHAR(100)
     );
 
-    DROP TABLE IF EXISTS dim_browser CASCADE;
-    CREATE TABLE dim_browser(
+    DROP TABLE IF EXISTS Dim_Browser CASCADE;
+    CREATE TABLE Dim_Browser(
         browser_id INT PRIMARY KEY,
         browser_name VARCHAR(100)
     );
-    DROP TABLE IF EXISTS fact_view CASCADE;
+    DROP TABLE IF EXISTS Fact_View CASCADE;
     CREATE TABLE Fact_View(
         id VARCHAR(100) PRIMARY KEY,      
         product_id INT NOT NULL,
         territory_id INT NOT NULL,
-        date_id BIGINT NOT NULL,
+        date_id INT NOT NULL,
         os_id INT NOT NULL,
         browser_id INT NOT NULL,
         current_url VARCHAR(255),         
-        referrer_url VARCHAR(255),        
+        referee_url VARCHAR(255),        
         store_id INT NOT NULL,
         total_view INT,
         FOREIGN KEY (product_id) REFERENCES Dim_Product(product_id),

@@ -8,6 +8,9 @@ from util.logger import Log4j
 import postgres_database as db_ops
 from dim_table import create_dim_date,create_dim_product,create_dim_territory
 
+
+import psycopg2
+
 db_ops.create_table()
 
 # create sparkSession
@@ -29,13 +32,16 @@ log = Log4j(spark)
 
 log.info(f"spark_conf: {spark_conf.getAll()}")
 log.info(f"kafka_conf: {kafka_conf.items()}")
-
 # create dim date,product,territory
 dim_date = create_dim_date(spark)
 dim_product = create_dim_product(spark)
 dim_territory = create_dim_territory(spark)
-# dim_territory.show()
 
+# insert dim_date,product,territory to database
+db_ops.insert_to_dim_date(dim_date)
+db_ops.insert_to_dim_territory(dim_territory)
+db_ops.insert_to_dim_product(dim_product)
+print("insert dim_date,product,territory")
 
 
 def normalize(df):
@@ -96,7 +102,7 @@ def process_batch(batch_df):
     gen_territory_id = when(col('territory_id').isNull(),-1).otherwise(col('territory_id'))
 
     # geneate date_id
-    gen_date_id = date_format(col("local_time"),'HHddMMyyyy').cast('int')
+    gen_date_id = date_format(col("local_time"),'HHddMMyyyy').cast('long')
     #generate browser_id
     parse_browser_udf = udf(lambda ua:parse(ua).browser.family, returnType=StringType())
     gen_browser_id = abs(hash(col('browser')))
@@ -133,7 +139,7 @@ def process_batch(batch_df):
                         col("os_id"),
                         col("referrer_url"),
                         col("current_url")))                
-    fact_view = behaviour_df_genkey \
+    df_fact_view = behaviour_df_genkey \
                 .groupBy(col("product_id"),
                         col("territory_id"),
                         col("date_id"),
@@ -146,7 +152,7 @@ def process_batch(batch_df):
                     count("*").alias("total_view")
                 )\
                 .withColumn("id",gen_fact_key)
-    fact_view = fact_view.select(["id"] + [col_name for col_name in fact_view.columns if col_name != "id"])
+    df_fact_view = df_fact_view.select(["id"] + [col_name for col_name in df_fact_view.columns if col_name != "id"])
     # fact_view.show()
 
     # dim browser
@@ -160,13 +166,14 @@ def process_batch(batch_df):
                 .select("os_id",
                         col("os").alias("os_name"))\
                 .distinct()
-    df_dim_browser.show()
+    # df_dim_browser.show()
     # df_dim_os.show()
 
     # load into database
-    df_dim_browser.show()
+    df_fact_view.show()
     db_ops.upsert_to_dim_browser(df_dim_browser)
-    
+    db_ops.upsert_to_dim_os(df_dim_os)
+    db_ops.upsert_to_fact_vew(df_fact_view)
 
 def streaming_process():
     df = spark.readStream \
@@ -180,7 +187,7 @@ def streaming_process():
         .outputMode('append') \
         .foreachBatch(lambda batch_df,  batch_id:process_batch(batch_df))\
         .option("truncate", False) \
-        .trigger(processingTime="4 seconds") \
+        .trigger(processingTime="20 seconds") \
         .start() \
         
     query.awaitTermination()
