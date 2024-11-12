@@ -5,10 +5,9 @@ from pyspark.sql.types import StringType, StructType, StructField, LongType, Arr
 from user_agents import parse
 from util.config import Config
 from util.logger import Log4j
-from postgres_database import Postgres
+import postgres_database as db_ops
 from dim_table import create_dim_date,create_dim_product,create_dim_territory
 
-db_ops = Postgres()
 db_ops.create_table()
 
 # create sparkSession
@@ -163,8 +162,10 @@ def process_batch(batch_df):
                 .distinct()
     df_dim_browser.show()
     # df_dim_os.show()
+
+    # load into database
     df_dim_browser.show()
-    # db_ops.upsert_to_dim_browser(df_dim_browser)
+    db_ops.upsert_to_dim_browser(df_dim_browser)
     
 
 def streaming_process():
