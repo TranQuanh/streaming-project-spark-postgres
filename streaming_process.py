@@ -10,7 +10,7 @@ from dim_table import create_dim_date,create_dim_product,create_dim_territory
 
 
 import psycopg2
-
+KAFKA_PATH_CHECKPOINT = '/checkpoint'
 db_ops.create_table()
 
 # create sparkSession
@@ -187,6 +187,7 @@ def streaming_process():
         .outputMode('append') \
         .foreachBatch(lambda batch_df,  batch_id:process_batch(batch_df))\
         .option("truncate", False) \
+        .option("checkpointLocation", "/tmp/spark-checkpoints") \
         .trigger(processingTime="20 seconds") \
         .start() \
         
